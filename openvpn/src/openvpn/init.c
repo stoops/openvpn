@@ -2941,6 +2941,8 @@ frame_finalize_options(struct context *c, const struct options *o)
     tailroom += COMP_EXTRA_BUFFER(payload_size);
 #endif
 
+    payload_size = TUN_MTU_MAX;
+
     frame->buf.payload_size = payload_size;
     frame->buf.headroom = headroom;
     frame->buf.tailroom = tailroom;
@@ -3671,13 +3673,42 @@ init_context_buffers(const struct frame *frame)
 
     size_t buf_size = BUF_SIZE(frame);
 
+    dmsg(M_INFO, "MEM NEW [%ld] [%d+%d+%d]", buf_size, frame->buf.headroom, frame->buf.payload_size, frame->buf.tailroom);
+
     b->read_link_buf = alloc_buf(buf_size);
     b->read_tun_buf = alloc_buf(buf_size);
 
-    b->aux_buf = alloc_buf(buf_size);
+    size_t max_size = (TUN_BAT_MAX * TUN_MTU_MAX);
 
-    b->encrypt_buf = alloc_buf(buf_size);
-    b->decrypt_buf = alloc_buf(buf_size);
+    for (int x = 0; x < TUN_BAT_MAX; ++x) {
+        b->read_tun_bufs[x] = alloc_buf(buf_size);
+        b->read_tun_bufs[x].offset = TUN_BAT_OFF;
+        b->read_tun_bufs[x].len = 0;
+    }
+
+    b->read_tun_max = alloc_buf(max_size);
+    b->read_tun_max.offset = TUN_BAT_OFF;
+    b->read_tun_max.len = 0;
+
+    b->read_link_max = alloc_buf(max_size);
+    b->read_link_max.offset = TUN_BAT_OFF;
+    b->read_link_max.len = 0;
+
+    b->send_tun_max = alloc_buf(max_size);
+    b->send_tun_max.offset = TUN_BAT_OFF;
+    b->send_tun_max.len = 0;
+
+    b->to_tun_max = alloc_buf(max_size);
+    b->to_tun_max.offset = TUN_BAT_OFF;
+    b->to_tun_max.len = 0;
+
+    b->bufs_indx = -1;
+    b->flag_ciph = -1;
+
+    b->aux_buf = alloc_buf(max_size);
+
+    b->encrypt_buf = alloc_buf(max_size);
+    b->decrypt_buf = alloc_buf(max_size);
 
 #ifdef USE_COMP
     b->compress_buf = alloc_buf(buf_size);

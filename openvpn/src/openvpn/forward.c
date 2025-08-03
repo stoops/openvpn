@@ -46,6 +46,9 @@
 
 #include "mstats.h"
 
+#include <sys/select.h>
+#include <sys/time.h>
+
 counter_type link_read_bytes_global;  /* GLOBAL */
 counter_type link_write_bytes_global; /* GLOBAL */
 
@@ -75,6 +78,17 @@ show_wait_status(struct context *c)
 }
 
 #endif /* ifdef ENABLE_DEBUG */
+
+void xfer_io(struct context *c, struct context *b) {
+    int plen = 0, leng = (b->c2.buffers->bufs_indx + 1);
+    for (int x = 0; x < leng; ++x) {
+        plen = BLEN(&b->c2.bufs[x]);
+        if (plen < 1) { c->c2.bufs[x].len = 0; }
+        else { c->c2.bufs[x] = b->c2.bufs[x]; }
+    }
+    c->c2.buffers->bufs_indx = b->c2.buffers->bufs_indx;
+    b->c2.buffers->bufs_indx = -1;
+}
 
 static void
 check_tls_errors_co(struct context *c)
@@ -610,6 +624,19 @@ buffer_turnover(const uint8_t *orig_buf, struct buffer *dest_stub, struct buffer
     }
 }
 
+uint8_t *buff_prepsize(uint8_t *buff, int *size) {
+    buff[0] = ((*size >> 8) & 0xff);
+    buff[1] = ((*size >> 0) & 0xff);
+    buff += 2;
+    return buff;
+}
+
+uint8_t *buff_postsize(uint8_t *buff, int *size) {
+    *size = ((buff[0] << 8) + (buff[1] << 0));
+    buff += 2;
+    return buff;
+}
+
 /*
  * Compress, fragment, encrypt and HMAC-sign an outgoing packet.
  * Input: c->c2.buf
@@ -936,7 +963,7 @@ read_incoming_link(struct context *c)
 
     perf_push(PERF_READ_IN_LINK);
 
-    c->c2.buf = c->c2.buffers->read_link_buf;
+    c->c2.buf = c->c2.buffers->read_link_max;
     ASSERT(buf_init(&c->c2.buf, c->c2.frame.buf.headroom));
 
     status = link_socket_read(c->c2.link_socket,
@@ -1038,6 +1065,7 @@ process_incoming_link_part1(struct context *c, struct link_socket_info *lsi, boo
         fprintf(stderr, "R");
     }
 #endif
+
     msg(D_LINK_RW, "%s READ [%d] from %s: %s",
         proto2ascii(lsi->proto, lsi->af, true),
         BLEN(&c->c2.buf),
@@ -1206,7 +1234,7 @@ process_incoming_link_part2(struct context *c, struct link_socket_info *lsi, con
             process_received_occ_msg(c);
         }
 
-        buffer_turnover(orig_buf, &c->c2.to_tun, &c->c2.buf, &c->c2.buffers->read_link_buf);
+        buffer_turnover(orig_buf, &c->c2.to_tun, &c->c2.buf, &c->c2.buffers->read_link_max);
 
         /* to_tun defined + unopened tuntap can cause deadlock */
         if (!tuntap_defined(c->c1.tuntap))
@@ -1220,6 +1248,24 @@ process_incoming_link_part2(struct context *c, struct link_socket_info *lsi, con
     }
 }
 
+void process_incoming_link_part3(struct context *c) {
+    int leng = BLEN(&c->c2.to_tun);
+    if (leng > 0) {
+        if (c->c2.buffers != NULL) {
+            c->c2.buffers->send_tun_max.len = 0;
+            uint8_t *temp = BPTR(&c->c2.to_tun);
+            if ((temp[0] == 0xff) && (temp[1] == 0x13) && (temp[2] == 0x37) && (temp[3] == 0xff)) {
+                c->c2.buffers->send_tun_max.offset = TUN_BAT_OFF;
+                c->c2.buffers->send_tun_max.len = leng;
+                bcopy(BPTR(&c->c2.to_tun), BPTR(&c->c2.buffers->send_tun_max), leng);
+                //dmsg(M_INFO, "FWD BAT LINK 0 [%d] [%d] [%d] [%d] [%d]", BLEN(&c->c2.buf), BLEN(&c->c2.to_tun), BLEN(&c->c2.buffers->read_link_buf), BLEN(&c->c2.buffers->read_link_max), BLEN(&c->c2.buffers->send_tun_max));
+            }
+            c->c2.to_tun.offset += 6;
+            c->c2.buf.offset += 6;
+        }
+    }
+}
+
 static void
 process_incoming_link(struct context *c)
 {
@@ -1230,6 +1276,7 @@ process_incoming_link(struct context *c)
 
     process_incoming_link_part1(c, lsi, false);
     process_incoming_link_part2(c, lsi, orig_buf);
+    process_incoming_link_part3(c);
 
     perf_pop();
 }
@@ -1285,7 +1332,7 @@ process_incoming_dco(struct context *c)
  */
 
 void
-read_incoming_tun(struct context *c)
+read_incoming_tun2(struct context *c)
 {
     /*
      * Setup for read() call on TUN/TAP device.
@@ -1351,6 +1398,41 @@ read_incoming_tun(struct context *c)
     check_status(c->c2.buf.len, "read from TUN/TAP", NULL, c->c1.tuntap);
 
     perf_pop();
+}
+
+void read_incoming_tun(struct context *c) {
+    fd_set rfds;
+    struct timeval timo;
+    read_incoming_tun2(c);
+    if ((c->c1.tuntap != NULL) && (c->c2.buffers != NULL)) {
+        int plen = BLEN(&c->c2.buf);
+        int fdno = c->c1.tuntap->fd;
+        while ((c->c2.buffers->bufs_indx + 1) < TUN_BAT_MIN) {
+            int leng = plen;
+            int indx = (c->c2.buffers->bufs_indx + 1);
+            if (leng < 1) {
+                FD_ZERO(&rfds);
+                FD_SET(fdno, &rfds);
+                timo.tv_sec = 0;
+                timo.tv_usec = 0;
+                select(fdno+1, &rfds, NULL, NULL, &timo);
+                if (FD_ISSET(fdno, &rfds)) {
+                    read_incoming_tun2(c);
+                    plen = BLEN(&c->c2.buf);
+                } else { break; }
+            }
+            //dmsg(M_INFO, "FWD BAT READ 0 [%d] [%d] [%d] [%d] [%d]", c->c2.buffers->bufs_indx + 1, fdno, BLEN(&c->c2.buf), BLEN(&c->c2.buffers->read_tun_buf), BLEN(&c->c2.buffers->read_tun_max));
+            leng = plen;
+            if (leng > 0) {
+                c->c2.buffers->read_tun_bufs[indx].offset = TUN_BAT_OFF;
+                c->c2.buffers->read_tun_bufs[indx].len = leng;
+                bcopy(BPTR(&c->c2.buf), BPTR(&c->c2.buffers->read_tun_bufs[indx]), leng);
+                c->c2.bufs[indx] = c->c2.buffers->read_tun_bufs[indx];
+                c->c2.buffers->bufs_indx = indx;
+            } else { break; }
+            plen = 0;
+        }
+    }
 }
 
 /**
@@ -1440,7 +1522,7 @@ drop_if_recursive_routing(struct context *c, struct buffer *buf)
  */
 
 void
-process_incoming_tun(struct context *c)
+process_incoming_tun2(struct context *c)
 {
     struct gc_arena gc = gc_new();
 
@@ -1459,7 +1541,7 @@ process_incoming_tun(struct context *c)
 #endif
 
     /* Show packet content */
-    dmsg(D_TUN_RW, "TUN READ [%d]", BLEN(&c->c2.buf));
+    dmsg(D_TUN_RW, "TUN READ [%d] [%d]", BLEN(&c->c2.buf), c->c2.frame.buf.payload_size);
 
     if (c->c2.buf.len > 0)
     {
@@ -1487,7 +1569,9 @@ process_incoming_tun(struct context *c)
     }
     if (c->c2.buf.len > 0)
     {
+        if ((c->c2.buffers == NULL) || (c->c2.buffers->flag_ciph > 0)) {
         encrypt_sign(c, true);
+        }
     }
     else
     {
@@ -1495,6 +1579,51 @@ process_incoming_tun(struct context *c)
     }
     perf_pop();
     gc_free(&gc);
+}
+
+void process_incoming_tun(struct context *c) {
+    if ((c->c1.tuntap != NULL) && (c->c2.buffers != NULL)) {
+        c->c2.buffers->flag_ciph = -2;
+        c->c2.buffers->read_tun_max.offset = TUN_BAT_OFF;
+        c->c2.buffers->read_tun_max.len = 0;
+        uint8_t *temp = BPTR(&c->c2.buffers->read_tun_max);
+        int plen = 0, fdno = c->c1.tuntap->fd;
+        int maxl = 0, leng = (c->c2.buffers->bufs_indx + 1);
+        if ((fdno > 0) && (leng > 0)) {
+            for (int x = 0; x < leng; ++x) {
+                c->c2.buf = c->c2.bufs[x];
+                //dmsg(M_INFO, "FWD BAT INPT 0 [%d] [%d] [%d] [%d] [%d]", x, fdno, BLEN(&c->c2.buf), BLEN(&c->c2.buffers->read_tun_buf), BLEN(&c->c2.bufs[x]));
+                process_incoming_tun2(c);
+                if (BLEN(&c->c2.buf) < 1) {
+                    c->c2.bufs[x].len = 0;
+                }
+            }
+            for (int x = 0; x < leng; ++x) {
+                plen = c->c2.bufs[x].len;
+                if (plen > 0) {
+                    if (maxl < 1) {
+                        temp[0] = 0xff; temp[1] = 0x13; temp[2] = 0x37; temp[3] = 0xff;
+                        temp += 4; maxl += 4;
+                    }
+                    temp = buff_prepsize(temp, &plen);
+                    bcopy(BPTR(&c->c2.bufs[x]), temp, plen);
+                    temp += plen; maxl += (plen + 2);
+                }
+            }
+            if (maxl > 0) {
+                c->c2.buffers->read_tun_max.offset = TUN_BAT_OFF;
+                c->c2.buffers->read_tun_max.len = maxl;
+                c->c2.buf = c->c2.buffers->read_tun_max;
+                c->c2.buffers->flag_ciph = 1;
+                //dmsg(M_INFO, "FWD BAT INPT 1 [%d] [%d] [%d] [%d] [%d]", maxl, fdno, BLEN(&c->c2.buf), BLEN(&c->c2.buffers->read_tun_buf), BLEN(&c->c2.buffers->read_tun_max));
+                encrypt_sign(c, true);//process_incoming_tun2(c);
+            }
+        }
+        c->c2.buffers->bufs_indx = -1;
+        c->c2.buffers->flag_ciph = -1;
+    } else {
+        process_incoming_tun2(c);
+    }
 }
 
 /**
@@ -1739,7 +1868,7 @@ process_outgoing_link(struct context *c)
 
     perf_push(PERF_PROC_OUT_LINK);
 
-    if (c->c2.to_link.len > 0 && c->c2.to_link.len <= c->c2.frame.buf.payload_size)
+    if (c->c2.to_link.len > 0)
     {
         /*
          * Setup for call to send/sendto which will send
@@ -1785,6 +1914,7 @@ process_outgoing_link(struct context *c)
                 fprintf(stderr, "W");
             }
 #endif
+
             msg(D_LINK_RW, "%s WRITE [%d] to %s: %s",
                 proto2ascii(c->c2.link_socket->info.proto, c->c2.link_socket->info.af, true),
                 BLEN(&c->c2.to_link),
@@ -1887,7 +2017,7 @@ process_outgoing_link(struct context *c)
  */
 
 void
-process_outgoing_tun(struct context *c)
+process_outgoing_tun2(struct context *c)
 {
     /*
      * Set up for write() call to TUN/TAP
@@ -1908,7 +2038,7 @@ process_outgoing_tun(struct context *c)
                       PIP_MSSFIX | PIPV4_EXTRACT_DHCP_ROUTER | PIPV4_CLIENT_NAT | PIP_OUTGOING,
                       &c->c2.to_tun);
 
-    if (c->c2.to_tun.len <= c->c2.frame.buf.payload_size)
+    if (c->c2.to_tun.len > 0)
     {
         /*
          * Write to TUN/TAP device.
@@ -1921,7 +2051,7 @@ process_outgoing_tun(struct context *c)
             fprintf(stderr, "w");
         }
 #endif
-        dmsg(D_TUN_RW, "TUN WRITE [%d]", BLEN(&c->c2.to_tun));
+        dmsg(D_TUN_RW, "TUN WRITE [%d] [%d]", BLEN(&c->c2.to_tun), c->c2.frame.buf.payload_size);
 
 #ifdef PACKET_TRUNCATION_CHECK
         ipv4_packet_size_verify(BPTR(&c->c2.to_tun),
@@ -1974,6 +2104,29 @@ process_outgoing_tun(struct context *c)
     buf_reset(&c->c2.to_tun);
 
     perf_pop();
+}
+
+void process_outgoing_tun(struct context *c) {
+    int leng = BLEN(&c->c2.buffers->send_tun_max);
+    int maxl = 0, plen = 0;
+    if ((c->c2.buffers != NULL) && (leng > 0)) {
+        uint8_t *temp = BPTR(&c->c2.buffers->send_tun_max);
+        temp += 4; maxl += 4;
+        for (int x = 0; x < TUN_BAT_MAX; ++x) {
+            temp = buff_postsize(temp, &plen);
+            if ((leng > 0) && (plen > 0) && ((maxl + plen) < leng)) {
+                c->c2.to_tun = c->c2.buffers->to_tun_max;
+                c->c2.to_tun.offset = TUN_BAT_OFF;
+                c->c2.to_tun.len = plen;
+                bcopy(temp, BPTR(&c->c2.to_tun), plen);
+                temp += plen; maxl += (plen + 2);
+                //dmsg(M_INFO, "FWD BAT OUTP 1 [%d] [%d] [%d] [%d]", x, BLEN(&c->c2.buf), BLEN(&c->c2.to_tun), BLEN(&c->c2.buffers->read_link_max));
+                process_outgoing_tun2(c);
+            } else { break; }
+        }
+    } else {
+        process_outgoing_tun2(c);
+    }
 }
 
 void

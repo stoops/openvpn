@@ -43,9 +43,11 @@ alloc_buf_sock_tun(struct buffer *buf,
                    const struct frame *frame)
 {
     /* allocate buffer for overlapped I/O */
-    *buf = alloc_buf(BUF_SIZE(frame));
+    int alen = BAT_SIZE(TUN_BAT_MAX, TUN_MTU_MAX, TUN_BAT_OFF);
+    int blen = BAT_SIZE(TUN_BAT_MAX, TUN_MTU_MAX, TUN_BAT_NOP);
+    *buf = alloc_buf(alen);
     ASSERT(buf_init(buf, frame->buf.headroom));
-    buf->len = frame->buf.payload_size;
+    buf->len = blen;
     ASSERT(buf_safe(buf, 0));
 }
 

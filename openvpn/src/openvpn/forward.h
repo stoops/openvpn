@@ -74,6 +74,8 @@ void pre_select(struct context *c);
 
 void process_io(struct context *c);
 
+void xfer_io(struct context *c, struct context *b);
+
 /**********************************************************************/
 /**
  * Process a data channel packet that will be sent through a VPN tunnel.
@@ -187,6 +189,8 @@ bool process_incoming_link_part1(struct context *c, struct link_socket_info *lsi
  *
  */
 void process_incoming_link_part2(struct context *c, struct link_socket_info *lsi, const uint8_t *orig_buf);
+
+void process_incoming_link_part3(struct context *c);
 
 /**
  * Write a packet to the external network interface.

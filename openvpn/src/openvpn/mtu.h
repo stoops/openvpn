@@ -58,6 +58,11 @@
  * this value for tun device.
  */
 #define TUN_MTU_MIN        100
+#define TUN_MTU_MAX        1500
+#define TUN_BAT_MIN        6
+#define TUN_BAT_MAX        9
+#define TUN_BAT_OFF        256
+#define TUN_BAT_NOP        0
 
 /*
  * Default MTU of network over which tunnel data will pass by TCP/UDP.
@@ -170,6 +175,7 @@ struct options;
  * larger than the headroom.
  */
 #define BUF_SIZE(f) ((f)->buf.headroom + (f)->buf.payload_size + (f)->buf.tailroom)
+#define BAT_SIZE(a, b, c) ((a * b) + c)
 
 /*
  * Function prototypes.
