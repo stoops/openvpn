@@ -115,9 +115,9 @@ struct context_buffers
 
     struct buffer read_tun_bufs[TUN_BAT_MAX];
     struct buffer read_tun_max;
-    struct buffer read_link_max;
     struct buffer send_tun_max;
     struct buffer to_tun_max;
+
     int bufs_indx;
     int flag_ciph;
 };

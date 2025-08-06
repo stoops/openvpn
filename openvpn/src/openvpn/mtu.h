@@ -58,7 +58,10 @@
  * this value for tun device.
  */
 #define TUN_MTU_MIN        100
-#define TUN_MTU_MAX        1500
+
+/*
+ * Bulk mode static define values.
+ */
 #define TUN_BAT_MIN        6
 #define TUN_BAT_MAX        9
 #define TUN_BAT_OFF        256
@@ -155,6 +158,10 @@ struct frame {
                                  *   Only set with the option --tun-mtu-extra
                                  *   which defaults to 0 for tun and 32
                                  *   (\c TAP_MTU_EXTRA_DEFAULT) for tap.
+                                 *   */
+
+    int bulk_size;              /**< Signal to the init frame function
+                                 *   to allow for bulk mode TCP transfers.
                                  *   */
 };
 

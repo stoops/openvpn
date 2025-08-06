@@ -326,7 +326,7 @@ tls_init_control_channel_frame_parameters(struct frame *frame, int tls_mtu)
      * default of 1500 + 100 as data channel buffers have. Increasing
      * control channel mtu beyond this limit also increases the data channel
      * buffers */
-    frame->buf.payload_size = TUN_MTU_MAX;
+    frame->buf.payload_size = max_int(1500, tls_mtu) + 100;
 
     frame->buf.headroom = overhead;
     frame->buf.tailroom = overhead;

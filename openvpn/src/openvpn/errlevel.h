@@ -102,7 +102,7 @@
 #define D_MULTI_MEDIUM       LOGLEV(4, 58, 0)        /* show medium frequency multi messages */
 #define D_X509_ATTR          LOGLEV(4, 59, 0)        /* show x509-track attributes on connection */
 #define D_INIT_MEDIUM        LOGLEV(4, 60, 0)        /* show medium frequency init messages */
-#define D_MTU_INFO           LOGLEV(3, 61, 0)        /* show terse MTU info */
+#define D_MTU_INFO           LOGLEV(4, 61, 0)        /* show terse MTU info */
 #define D_PID_DEBUG_LOW      LOGLEV(4, 63, 0)        /* show low-freq packet-id debugging info */
 #define D_PID_DEBUG_MEDIUM   LOGLEV(4, 64, 0)        /* show medium-freq packet-id debugging info */
 #define D_CIPHER_INIT        LOGLEV(4, 65, 0)        /* show messages about cipher init */
@@ -110,8 +110,8 @@
 #define D_LOG_RW             LOGLEV(5, 0,  0)        /* Print 'R' or 'W' to stdout for read/write */
 
 #define D_RTNL               LOGLEV(6, 68, M_DEBUG)  /* show RTNL low level operations */
-#define D_LINK_RW            LOGLEV(3, 69, M_DEBUG)  /* show TCP/UDP reads/writes (terse) */
-#define D_TUN_RW             LOGLEV(3, 69, M_DEBUG)  /* show TUN/TAP reads/writes */
+#define D_LINK_RW            LOGLEV(6, 69, M_DEBUG)  /* show TCP/UDP reads/writes (terse) */
+#define D_TUN_RW             LOGLEV(6, 69, M_DEBUG)  /* show TUN/TAP reads/writes */
 #define D_TAP_WIN_DEBUG      LOGLEV(6, 69, M_DEBUG)  /* show TAP-Windows driver debug info */
 #define D_CLIENT_NAT         LOGLEV(6, 69, M_DEBUG)  /* show client NAT debug info */
 #define D_XKEY               LOGLEV(6, 69, M_DEBUG)  /* show xkey-provider debug info */
@@ -123,7 +123,7 @@
 #define D_FRAG_DEBUG         LOGLEV(7, 70, M_DEBUG)  /* show fragment debugging info */
 #define D_WIN32_IO_LOW       LOGLEV(7, 70, M_DEBUG)  /* low freq win32 I/O debugging info */
 #define D_MTU_DEBUG          LOGLEV(7, 70, M_DEBUG)  /* show MTU debugging info */
-#define D_MULTI_DEBUG        LOGLEV(3, 70, M_DEBUG)  /* show medium-freq multi debugging info */
+#define D_MULTI_DEBUG        LOGLEV(7, 70, M_DEBUG)  /* show medium-freq multi debugging info */
 #define D_MSS                LOGLEV(7, 70, M_DEBUG)  /* show MSS adjustments */
 #define D_COMP_LOW           LOGLEV(7, 70, M_DEBUG)  /* show adaptive compression state changes */
 #define D_CONNECTION_LIST    LOGLEV(7, 70, M_DEBUG)  /* show <connection> list info */
@@ -167,8 +167,8 @@
 #define D_PACKET_CONTENT     LOGLEV(9, 70, M_DEBUG)  /* show before/after encryption packet content */
 #define D_TLS_NO_SEND_KEY    LOGLEV(9, 70, M_DEBUG)  /* show when no data channel send-key exists */
 #define D_PID_PERSIST_DEBUG  LOGLEV(9, 70, M_DEBUG)  /* show packet-id persist debugging info */
-#define D_LINK_RW_VERBOSE    LOGLEV(3, 70, M_DEBUG)  /* show link reads/writes with greater verbosity */
-#define D_STREAM_DEBUG       LOGLEV(3, 70, M_DEBUG)  /* show TCP stream debug info */
+#define D_LINK_RW_VERBOSE    LOGLEV(9, 70, M_DEBUG)  /* show link reads/writes with greater verbosity */
+#define D_STREAM_DEBUG       LOGLEV(9, 70, M_DEBUG)  /* show TCP stream debug info */
 #define D_WIN32_IO           LOGLEV(9, 70, M_DEBUG)  /* win32 I/O debugging info */
 #define D_PKCS11_DEBUG       LOGLEV(9, 70, M_DEBUG)  /* show PKCS#11 debugging */
 
